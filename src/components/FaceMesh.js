@@ -11,26 +11,34 @@ function classifyFaceShape(landmarks, canvasWidth, canvasHeight) {
 
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-  const forehead = distance(getPoint(21), getPoint(251));
+  const forehead = distance(getPoint(103), getPoint(332));
   const cheekbones = distance(getPoint(234), getPoint(454));
   const jaw = distance(getPoint(172), getPoint(397));
   const faceLength = distance(getPoint(10), getPoint(152));
+  const jawlineLength = distance(getPoint(58), getPoint(288));
 
   const lengthToWidthRatio = faceLength / cheekbones;
   const jawToCheekRatio = jaw / cheekbones;
   const foreheadToCheekRatio = forehead / cheekbones;
+  const jawSharpness = jawlineLength / jaw;
 
-  if (lengthToWidthRatio > 1.5) {
+  if (lengthToWidthRatio > 1.55) {
     return "Oblong";
-  } else if (jawToCheekRatio > 0.95 && foreheadToCheekRatio > 0.95) {
-    return "Square";
-  } else if (jawToCheekRatio < 0.8 && foreheadToCheekRatio > 0.9) {
-    return "Heart";
-  } else if (lengthToWidthRatio < 1.2 && jawToCheekRatio > 0.85) {
-    return "Round";
-  } else {
-    return "Oval";
   }
+
+  if (jawToCheekRatio > 0.9 && foreheadToCheekRatio > 0.9 && jawSharpness > 0.85) {
+    return "Square";
+  }
+
+  if (foreheadToCheekRatio > 0.95 && jawToCheekRatio < 0.78) {
+    return "Heart";
+  }
+
+  if (lengthToWidthRatio < 1.15 && jawToCheekRatio > 0.8 && jawSharpness < 0.85) {
+    return "Round";
+  }
+
+  return "Oval";
 }
 
 function getContourTips(shape) {
@@ -43,6 +51,33 @@ function getContourTips(shape) {
   };
   return tips[shape] || "";
 }
+
+function getProductRecommendations(shape) {
+  const products = {
+    Oval: [
+      { name: "Cream contour stick", note: "Easy blending for subtle definition" },
+      { name: "Powder bronzer", note: "For everyday light warmth" },
+    ],
+    Round: [
+      { name: "Angled contour brush", note: "Helps create sharper lines at the temples" },
+      { name: "Matte contour palette", note: "Matte finish reads more natural for adding angles" },
+    ],
+    Square: [
+      { name: "Cream highlighter", note: "Softens strong jaw corners when placed centrally" },
+      { name: "Soft-edge contour brush", note: "Blends corners without harsh lines" },
+    ],
+    Heart: [
+      { name: "Cream contour stick", note: "For light temple definition" },
+      { name: "Pearl highlighter", note: "Brightens the chin to balance a wider forehead" },
+    ],
+    Oblong: [
+      { name: "Matte bronzer", note: "For horizontal blush placement" },
+      { name: "Contour palette (cool-toned)", note: "For forehead and chin shading" },
+    ],
+  };
+  return products[shape] || [];
+}
+
 function drawContourOverlay(ctx, landmarks, canvasWidth, canvasHeight, shape) {
   const getPoint = (index) => ({
     x: landmarks[index].x * canvasWidth,
@@ -60,14 +95,12 @@ function drawContourOverlay(ctx, landmarks, canvasWidth, canvasHeight, shape) {
     ctx.fill();
   };
 
-      const contourColor = "rgba(140, 80, 40, 0.65)";
-  const highlightColor = "rgba(255, 223, 170, 0.55)"; 
+  const contourColor = "rgba(140, 80, 40, 0.65)";
+  const highlightColor = "rgba(255, 223, 170, 0.55)";
 
-    if (shape === "Round" || shape === "Square") {
-    // Temple contour
+  if (shape === "Round" || shape === "Square") {
     drawZone([getPoint(21), getPoint(54), getPoint(103), getPoint(67)], contourColor);
     drawZone([getPoint(251), getPoint(284), getPoint(332), getPoint(297)], contourColor);
-    // Cheek hollow sweep
     drawZone(
       [getPoint(127), getPoint(234), getPoint(93), getPoint(132), getPoint(58), getPoint(172)],
       contourColor
@@ -78,22 +111,18 @@ function drawContourOverlay(ctx, landmarks, canvasWidth, canvasHeight, shape) {
     );
   }
 
-    if (shape === "Heart") {
-    // Light temple contour
+  if (shape === "Heart") {
     drawZone([getPoint(21), getPoint(54), getPoint(103), getPoint(67)], contourColor);
     drawZone([getPoint(251), getPoint(284), getPoint(332), getPoint(297)], contourColor);
-    // Highlight chin
     drawZone([getPoint(211), getPoint(152), getPoint(431), getPoint(377), getPoint(148)], highlightColor);
   }
 
-   if (shape === "Oblong") {
-    // Contour forehead top to shorten
+  if (shape === "Oblong") {
     drawZone([getPoint(10), getPoint(109), getPoint(67), getPoint(297), getPoint(338)], contourColor);
-    // Contour chin to shorten
     drawZone([getPoint(211), getPoint(152), getPoint(431), getPoint(377), getPoint(148)], contourColor);
   }
 
-    if (shape === "Oval") {
+  if (shape === "Oval") {
     drawZone(
       [getPoint(127), getPoint(234), getPoint(93), getPoint(132), getPoint(58), getPoint(172)],
       contourColor
@@ -104,12 +133,15 @@ function drawContourOverlay(ctx, landmarks, canvasWidth, canvasHeight, shape) {
     );
   }
 }
+
 export default function FaceMesh() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const shapeHistoryRef = useRef([]);
+  const captureRef = useRef(null);
   const [status, setStatus] = useState("Loading model...");
   const [faceShape, setFaceShape] = useState("");
+  const [captured, setCaptured] = useState(null);
 
   useEffect(() => {
     let faceLandmarker;
@@ -160,7 +192,7 @@ export default function FaceMesh() {
 
       if (results.faceLandmarks && results.faceLandmarks.length > 0) {
         const landmarks = results.faceLandmarks[0];
-        
+
         const shape = classifyFaceShape(landmarks, canvas.width, canvas.height);
 
         shapeHistoryRef.current.push(shape);
@@ -183,6 +215,14 @@ export default function FaceMesh() {
       animationId = requestAnimationFrame(predictLoop);
     }
 
+    function captureSnapshot() {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const dataUrl = canvas.toDataURL("image/png");
+      setCaptured(dataUrl);
+    }
+    captureRef.current = captureSnapshot;
+
     setup();
 
     return () => {
@@ -192,12 +232,69 @@ export default function FaceMesh() {
   }, []);
 
   return (
-    <div style={{ position: "relative", width: "640px", height: "480px" }}>
-      <p>{status}</p>
-      {faceShape && <h2>Detected face shape: {faceShape}</h2>}
-      {faceShape && <p style={{ maxWidth: "500px" }}>{getContourTips(faceShape)}</p>}
-      <video ref={videoRef} autoPlay playsInline style={{ display: "none" }} />
-      <canvas ref={canvasRef} style={{ width: "100%", border: "1px solid #ccc" }} />
+    <div className="flex flex-col items-center gap-4 w-full max-w-[640px]">
+      <p className="text-yellow-500 text-sm tracking-wide uppercase">{status}</p>
+
+      {faceShape && (
+        <h2 className="text-2xl font-semibold text-yellow-400">
+          Detected face shape: <span className="text-white">{faceShape}</span>
+        </h2>
+      )}
+
+      {faceShape && (
+        <p className="text-gray-300 text-center max-w-[500px] text-sm md:text-base">
+          {getContourTips(faceShape)}
+        </p>
+      )}
+
+      {faceShape && (
+        <div className="w-full max-w-[500px] bg-zinc-900 border border-yellow-500/40 rounded-lg p-4">
+          <h3 className="text-yellow-400 text-sm font-semibold uppercase tracking-wide mb-2">
+            Suggested products
+          </h3>
+          <ul className="space-y-2">
+            {getProductRecommendations(faceShape).map((product, i) => (
+              <li key={i} className="text-gray-300 text-sm">
+                <span className="text-white font-medium">{product.name}</span>
+                {" — "}
+                {product.note}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="relative w-full rounded-xl overflow-hidden border-2 border-yellow-500 shadow-[0_0_25px_rgba(234,179,8,0.3)]">
+        <video ref={videoRef} autoPlay playsInline style={{ display: "none" }} />
+        <canvas ref={canvasRef} className="w-full block" />
+      </div>
+
+      {faceShape && (
+        <button
+          onClick={() => captureRef.current && captureRef.current()}
+          className="mt-2 px-6 py-2 rounded-full bg-yellow-500 text-black font-semibold tracking-wide hover:bg-yellow-400 transition"
+        >
+          Capture & Save
+        </button>
+      )}
+
+      {captured && (
+        <div className="flex flex-col items-center gap-2 mt-4">
+          <p className="text-gray-400 text-sm">Your result:</p>
+          <img
+            src={captured}
+            alt="Captured face contour result"
+            className="rounded-lg border border-yellow-500 max-w-[300px]"
+          />
+          <a
+            href={captured}
+            download="face-contour-result.png"
+            className="text-yellow-400 underline text-sm hover:text-yellow-300"
+          >
+            Download image
+          </a>
+        </div>
+      )}
     </div>
   );
 }
