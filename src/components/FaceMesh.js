@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { supabase } from "@/lib/supabaseClient";
 
 function classifyFaceShape(landmarks, canvasWidth, canvasHeight) {
   const getPoint = (index) => ({
@@ -134,6 +136,21 @@ function drawContourOverlay(ctx, landmarks, canvasWidth, canvasHeight, shape) {
   }
 }
 
+function makeThumbnail(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      const w = 240;
+      c.width = w;
+      c.height = Math.round((img.height / img.width) * w);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL("image/jpeg", 0.7));
+    };
+    img.src = dataUrl;
+  });
+}
+
 export default function FaceMesh() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -142,6 +159,21 @@ export default function FaceMesh() {
   const [status, setStatus] = useState("Loading model...");
   const [faceShape, setFaceShape] = useState("");
   const [captured, setCaptured] = useState(null);
+  const [user, setUser] = useState(null);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUser(data.user ?? null));
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     let faceLandmarker;
@@ -217,9 +249,8 @@ export default function FaceMesh() {
 
     function captureSnapshot() {
       const canvas = canvasRef.current;
-      if (!canvas) return;
-      const dataUrl = canvas.toDataURL("image/png");
-      setCaptured(dataUrl);
+      if (!canvas) return null;
+      return canvas.toDataURL("image/png");
     }
     captureRef.current = captureSnapshot;
 
@@ -230,6 +261,35 @@ export default function FaceMesh() {
       if (stream) stream.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
+  async function handleCapture() {
+    if (!captureRef.current) return;
+    const dataUrl = captureRef.current();
+    if (!dataUrl) return;
+
+    setCaptured(dataUrl);
+    setSaveMessage("");
+
+    if (!user) {
+      setSaveMessage("Log in to save this scan to your history.");
+      return;
+    }
+
+    setSaving(true);
+    const thumbnail = await makeThumbnail(dataUrl);
+    const { error } = await supabase.from("scans").insert({
+      user_id: user.id,
+      face_shape: faceShape,
+      image_url: thumbnail,
+    });
+    setSaving(false);
+
+    if (error) {
+      setSaveMessage("Could not save: " + error.message);
+    } else {
+      setSaveMessage("Saved to your history.");
+    }
+  }
 
   return (
     <div className="flex flex-col items-center gap-4 w-full max-w-[640px]">
@@ -271,11 +331,23 @@ export default function FaceMesh() {
 
       {faceShape && (
         <button
-          onClick={() => captureRef.current && captureRef.current()}
-          className="mt-2 px-6 py-2 rounded-full bg-yellow-500 text-black font-semibold tracking-wide hover:bg-yellow-400 transition"
+          onClick={handleCapture}
+          disabled={saving}
+          className="mt-2 px-6 py-2 rounded-full bg-yellow-500 text-black font-semibold tracking-wide hover:bg-yellow-400 transition disabled:opacity-50"
         >
-          Capture & Save
+          {saving ? "Saving..." : "Capture & Save"}
         </button>
+      )}
+
+      {saveMessage && <p className="text-gray-300 text-sm">{saveMessage}</p>}
+
+      {user && (
+        <Link
+          href="/history"
+          className="text-yellow-400 underline text-sm hover:text-yellow-300"
+        >
+          View my scans
+        </Link>
       )}
 
       {captured && (

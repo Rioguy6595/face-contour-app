@@ -1,4 +1,5 @@
 import FaceMesh from "@/components/FaceMesh";
+import AuthPanel from "@/components/AuthPanel";
 
 export default function Home() {
   return (
@@ -11,6 +12,7 @@ export default function Home() {
           Scan your face. Discover your shape. Get your contour map.
         </p>
       </div>
+      <AuthPanel />
       <FaceMesh />
     </main>
   );
